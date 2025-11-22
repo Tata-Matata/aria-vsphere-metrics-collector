@@ -27,19 +27,12 @@ func main() {
 
 	// Create metric hub and prometheus sink
 	hub := metrics.NewMetricHub()
-	promSink := prometheus.NewSink()
+	//TODO: make checkpoint file and interval configurable
+	promSink := prometheus.NewSink(METRICS_BACKUP_FILE, METRICS_BACKUP_INTERVAL_SEC*time.Second)
 	hub.RegisterSink(promSink)
 
 	// set global handler hub
 	handlers.Hub = hub
-
-	// Load checkpoint if exists
-	if err := promSink.LoadCheckpoint("metrics_checkpoint.json"); err != nil {
-		log.Println("warning: failed to load checkpoint:", err)
-	}
-
-	// Start autosave every 30s
-	promSink.StartAutoSave("metrics_checkpoint.json", 30*time.Second)
 
 	// Example pollers: replace with your real URLs and labels
 	// These poll remote GET endpoints periodically and set gauges
