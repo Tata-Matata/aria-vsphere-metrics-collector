@@ -69,12 +69,15 @@ func (checkpoint *JSONCheckpoint) Save() error {
 	checkpoint.lock.Lock()
 	defer checkpoint.lock.Unlock()
 
+	//open json file
 	file, err := os.Create(checkpoint.FilePath)
 	if err != nil {
+		logger.Error(fmt.Sprintf("Failed to create checkpoint file: %v", err))
 		return err
 	}
 	defer file.Close()
 
+	//write maps as json
 	return json.NewEncoder(file).Encode(struct {
 		Counters map[string]map[string]float64 `json:"counters"`
 		Gauges   map[string]map[string]float64 `json:"gauges"`
@@ -84,7 +87,7 @@ func (checkpoint *JSONCheckpoint) Save() error {
 	})
 }
 
-// Load restores metric maps from the JSON file
+// loads metric maps from the JSON file
 func (checkpoint *JSONCheckpoint) Load() error {
 	checkpoint.lock.Lock()
 	defer checkpoint.lock.Unlock()
@@ -113,27 +116,28 @@ func (checkpoint *JSONCheckpoint) Load() error {
 	return nil
 }
 
+// returns current counter values
 func (checkpoint *JSONCheckpoint) GetCounterValues() map[string]map[string]float64 {
 	checkpoint.lock.Lock()
 	defer checkpoint.lock.Unlock()
 	return checkpoint.CounterValues
 }
 
+// returns current gauge values
 func (checkpoint *JSONCheckpoint) GetGaugeValues() map[string]map[string]float64 {
 	checkpoint.lock.Lock()
 	defer checkpoint.lock.Unlock()
 	return checkpoint.GaugeValues
 }
 
-// StartPeriodic starts a goroutine that periodically saves metrics to the file
+// periodically saves metrics to the file
 func (checkpoint *JSONCheckpoint) StartPeriodic(interval time.Duration) {
 	go func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for range ticker.C {
 			if err := checkpoint.Save(); err != nil {
-				// log error in real implementation
-				// fmt.Println("Checkpoint save error:", err)
+				logger.Error(fmt.Sprintf("Failed to save checkpoint: %v", err))
 			}
 		}
 	}()
