@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/Tata-Matata/aria-vsphere-metrics-collector/logger"
 	"github.com/Tata-Matata/aria-vsphere-metrics-collector/metrics"
 )
 
@@ -80,7 +81,7 @@ func PushHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // Health check
-func HealthHandler(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusOK)
-	fmt.Fprintln(w, "OK")
+func HealthHandler(respWriter http.ResponseWriter, request *http.Request) {
+	respWriter.WriteHeader(http.StatusOK)
+	logger.Info(fmt.Sprintf("Health check response %v %s", respWriter, "OK"))
 }
