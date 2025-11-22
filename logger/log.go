@@ -50,14 +50,14 @@ func (appLog *Logger) Close() {
 	}
 }
 
-func LogError(msg string) {
+func Error(msg string) {
 	log.Println("[ERROR]", msg)
 }
 
-func LogInfo(msg string) {
+func Info(msg string) {
 	log.Println("[INFO]", msg)
 }
 
-func LogWarn(msg string) {
+func Warn(msg string) {
 	log.Println("[WARN]", msg)
 }

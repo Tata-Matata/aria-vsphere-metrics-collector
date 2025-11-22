@@ -1,10 +1,12 @@
 package prometheus
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/Tata-Matata/aria-vsphere-metrics-collector/checkpoint"
+	"github.com/Tata-Matata/aria-vsphere-metrics-collector/logger"
 	"github.com/Tata-Matata/aria-vsphere-metrics-collector/util"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -54,16 +56,49 @@ func NewSink(checkpointFile string, saveInterval time.Duration) *PrometheusSink 
 		psink.checkpoint.CounterValues = make(map[string]map[string]float64)
 		psink.checkpoint.GaugeValues = make(map[string]map[string]float64)
 
-		// load previous metrics if file exists
-		_ = psink.checkpoint.Load()
+		// load previous metrics from  backup if exists into checkpoint maps
+		if err := psink.checkpoint.Load(); err != nil {
+			logger.Error(fmt.Sprint("Failed to load checkpoint:", err))
+		} else {
+			psink.restoreFromCheckpoint()
+		}
 
-		// start periodic save
+		// start periodic backups
 		psink.checkpoint.StartPeriodic(saveInterval)
 	}
 
 	return psink
 }
 
+// restores metric values from checkpoint into the sink
+func (psink *PrometheusSink) restoreFromCheckpoint() {
+	psink.lock.Lock()
+	defer psink.lock.Unlock()
+
+	checkpoint := psink.checkpoint
+
+	// 1. Restore counters
+	for metricName, series := range checkpoint.GetCounterValues() {
+		vec := psink.getOrCreateCounter(metricName, psink.labelNames[metricName])
+		for labelsKey, value := range series {
+			//we stored labels joined by separator in a single string key,
+			// need to deserialize back to map
+			labels := util.MapFromString(labelsKey)
+			vec.With(labels).Add(value)
+		}
+	}
+
+	// 2. Restore gauges
+	for name, series := range checkpoint.GetGaugeValues() {
+		vec := psink.getOrCreateGauge(name, psink.labelNames[name])
+		for labelsKey, value := range series {
+			labels := util.MapFromString(labelsKey)
+			vec.With(labels).Set(value)
+		}
+	}
+}
+
+// retrieves existing CounterVec or creates a new one if it doesn't exist
 func (psink *PrometheusSink) getOrCreateCounter(name string, labelNames []string) *prometheus.CounterVec {
 
 	// check if metric already exists
@@ -86,6 +121,7 @@ func (psink *PrometheusSink) getOrCreateCounter(name string, labelNames []string
 	return counterVec
 }
 
+// retrieves existing GaugeVec or creates a new one if it doesn't exist
 func (psink *PrometheusSink) getOrCreateGauge(name string, labelNames []string) *prometheus.GaugeVec {
 
 	// check if metric already exists

@@ -2,7 +2,7 @@ package checkpoint
 
 import "time"
 
-// Checkpoint is a generic interface for saving/restoring metrics.
+// Generic interface for backing up/loading metrics at intervals
 type Checkpoint interface {
 	Save() error
 	Load() error
