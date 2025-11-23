@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -50,12 +51,13 @@ func (appLog *Logger) Close() {
 	}
 }
 
-func Error(msg string) {
-	log.Println("[ERROR]", msg)
+func Error(message string, args ...any) error {
+	log.Println("[ERROR]", fmt.Sprintf(message, args...))
+	return fmt.Errorf("[ERROR] %s", fmt.Sprintf(message, args...))
 }
 
-func Info(msg string) {
-	log.Println("[INFO]", msg)
+func Info(message string, args ...any) {
+	log.Println("[INFO]", fmt.Sprintf(message, args...))
 }
 
 func Warn(msg string) {

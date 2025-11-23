@@ -1,96 +1,104 @@
 package poller
 
 import (
-	"encoding/json"
-	"fmt"
+	"context"
 	"io"
+	"log"
 	"net/http"
 	"time"
 
+	"github.com/Tata-Matata/aria-vsphere-metrics-collector/logger"
 	"github.com/Tata-Matata/aria-vsphere-metrics-collector/metrics"
 )
 
-// Simple poller that GETs a URL expecting JSON like {"value": 123.4}
-// and sets a gauge metric in the MetricHub.
-
-type Poller struct {
-	URL        string
-	MetricName string
-	Labels     map[string]string
-	Interval   time.Duration
-	Hub        *metrics.MetricHub
-	Client     *http.Client
+// defines how data received from polled source will be processed
+// into metrics by concrete poller and pushed to MetricHub
+type MetricProcessor interface {
+	ProcessAndPushMetrics(data []byte, hub *metrics.MetricHub) error
+	Name() string
 }
 
-func NewPoller(url, metric string, labels map[string]string, interval time.Duration, hub *metrics.MetricHub) *Poller {
+// generic poller gets json data from a REST API endpoint,
+// processes it and sends metric to MetricHub.
+type Poller struct {
+	Name       string
+	URL        string
+	Interval   time.Duration
+	Hub        *metrics.MetricHub
+	HttpClient *http.Client
+
+	// strategy pattern - custom logic to extract metric from response and push to hub
+	Processor MetricProcessor
+}
+
+func New(processor MetricProcessor, url string, interval time.Duration, hub *metrics.MetricHub) *Poller {
+	pollerName := processor.Name()
+	logger.Info("Creating %s to poll URL %s every %d seconds", pollerName, url, interval)
+
 	return &Poller{
-		URL:        url,
-		MetricName: metric,
-		Labels:     labels,
-		Interval:   interval,
-		Hub:        hub,
-		Client: &http.Client{
-			Timeout: 5 * time.Second,
+		Processor: processor,
+		Name:      pollerName,
+		URL:       url,
+		Interval:  interval,
+		Hub:       hub,
+		HttpClient: &http.Client{
+			Timeout: POLL_TIMEOUT_SEC * time.Second,
 		},
 	}
 }
 
-func (p *Poller) Start() {
-	go func() {
-		t := time.NewTicker(p.Interval)
-		defer t.Stop()
-		for range t.C {
-			if err := p.pollOnce(); err != nil {
-				fmt.Printf("Poller error (%s): %v\n", p.URL, err)
+// poll at regular intervals
+func (poller *Poller) Start(context context.Context) {
+	ticker := time.NewTicker(poller.Interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			if err := poller.pollOnce(context); err != nil {
+				log.Printf("poller %s error: %v", poller.Name, err)
 			}
+		//for graceful shutdown
+		// since poller runs in background goroutine
+		case <-context.Done():
+			log.Printf("poller %s stopping", poller.Name)
+			return
 		}
-	}()
+	}
 }
 
-func (p *Poller) pollOnce() error {
-	resp, err := p.Client.Get(p.URL)
+// perform single poll operation
+func (poller *Poller) pollOnce(context context.Context) error {
+
+	//make HTTP GET request
+	req, err := http.NewRequestWithContext(context, "GET", poller.URL, nil)
 	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("status %d", resp.StatusCode)
-	}
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return err
+		return logger.Error("poller %s failed to create GET request for polling: %v", poller.Name, err)
 	}
 
-	// Expect either: {"value": number} or {"value": "123.4"} or a raw number
-	var parsed map[string]interface{}
-	if err := json.Unmarshal(body, &parsed); err != nil {
-		// If not object, try parse as plain number
-		var val float64
-		if err2 := json.Unmarshal(body, &val); err2 == nil {
-			p.Hub.SetGauge(p.MetricName, p.Labels, val)
-			return nil
-		}
-		return err
+	//execute request
+	resp, err := poller.HttpClient.Do(req)
+	if err != nil {
+		return logger.Error("poller's %s polling request failed: %v", poller.Name, err)
 	}
-	v, ok := parsed["value"]
-	if !ok {
-		return fmt.Errorf("no 'value' in response")
+	defer resp.Body.Close()
+
+	//check response status
+	if resp.StatusCode != http.StatusOK {
+		return logger.Error("Request from poller %s returned non-200 HTTP code %d", poller.Name, resp.StatusCode)
 	}
-	switch t := v.(type) {
-	case float64:
-		p.Hub.SetGauge(p.MetricName, p.Labels, t)
-	case int:
-		p.Hub.SetGauge(p.MetricName, p.Labels, float64(t))
-	case string:
-		// try parse numeric string
-		var x float64
-		if err := json.Unmarshal([]byte("\""+t+"\""), &x); err == nil {
-			p.Hub.SetGauge(p.MetricName, p.Labels, x)
-		} else {
-			return fmt.Errorf("value is string and not numeric: %v", t)
-		}
-	default:
-		return fmt.Errorf("unsupported value type %T", v)
+
+	//read response body
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return logger.Error("poller %s failed to read response body: %v", poller.Name, err)
 	}
+
+	//process and push metrics
+	err = poller.Processor.ProcessAndPushMetrics(body, poller.Hub)
+	if err != nil {
+		return logger.Error("Poller %s failed to process and push metric to hub: %v", poller.Name, err)
+	}
+
 	return nil
 }
