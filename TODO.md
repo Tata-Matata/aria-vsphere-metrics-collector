@@ -2,7 +2,7 @@
 
 ## High Priority
 - [ ] make all parameters in main configurable, including new pollers if possible
-- [ ] 
+- [ ] AUTH!!
 - [ ] 
 
 ## Medium Priority

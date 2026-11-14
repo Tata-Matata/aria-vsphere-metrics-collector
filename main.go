@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -34,15 +35,26 @@ func main() {
 	// set global handler hub
 	handlers.Hub = hub
 
-	// poll remote GET endpoints periodically and set gauges
+	/*******************************************
+	********** POLL clients for metrics ********
+	*******************************************/
+
+	// poll remote GET endpoints periodically
+	//TODO: add docs why context is needed for graceful shutdown of background goroutines
+	context, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	pollers := []*poller.Poller{
-		poller.NewPoller("http://localhost:5000/gauge1", "external_gauge_1", map[string]string{"source": "fake-api"}, 15*time.Second, hub),
-		poller.NewPoller("http://localhost:5000/gauge2", "external_gauge_2", map[string]string{"source": "fake-api"}, 20*time.Second, hub),
+		poller.New(&poller.StorageProcessor{}, "https://vSPHEREURL:80/storage", 15*time.Second, hub),
+		poller.New(&poller.DeployProcessor{}, "https://ARIAURL:80/deployments", 20*time.Second, hub),
 	}
-	for _, p := range pollers {
-		p.Start()
+	for _, poller := range pollers {
+		poller.Start(context)
 	}
 
+	/************************************************
+	********** RECEIVE metrics pushed by clients*****
+	*************************************************/
 	// HTTP routes for receiving pushed events
 	http.HandleFunc("/event", handlers.EventHandler) // legacy format
 	http.HandleFunc("/push", handlers.PushHandler)   // generic push
@@ -52,7 +64,7 @@ func main() {
 
 	// health check endpoint
 	http.HandleFunc("/health", handlers.HealthHandler)
-	addr := ":8080"
+	addr := DEFAULT_LISTEN_ADDR
 	fmt.Println("Starting exporter on", addr)
 	log.Fatal(http.ListenAndServe(addr, nil))
 }
