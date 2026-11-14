@@ -188,6 +188,11 @@ go test ./...
 
 All dependencies are defined in `go.mod` and managed via standard Go module tooling.
 
+## Testing with Fake ARIA API
+
+For local development and integration testing without requiring a real ARIA instance, this project can be used with the `fake-aria-api mock` server. The `fake-aria-api` provides mock endpoints for deployments and datastores, allowing you to test the metrics collector's polling and event handling logic in isolation. 
+To use it, configure the poller endpoints in `main.go` to point to `http://localhost:10000` (the fake-aria-api default port) instead of production ARIA or vSphere URLs, then run both the `fake-aria-api server` and the metrics collector. This approach enables rapid iteration, automated testing, and CI/CD integration without external dependencies.
+
 ## Design Patterns
 
 ### Strategy Pattern (MetricProcessor)
@@ -210,6 +215,8 @@ Pluggable sinks allow flexible output:
 - Prometheus sink for monitoring
 - JSON checkpoint sink for persistence
 - Easy to add additional sinks (e.g., time-series database, logging, etc.)
+
+
 
 ## Known Limitations & Future Work
 
